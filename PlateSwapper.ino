@@ -2,8 +2,8 @@
 #include <WebServer.h>
 #include <AccelStepper.h>
 
-const char* ssid = "Kontyner";
-const char* password = "Kancelaria2012";
+const char* ssid = "SSID";
+const char* password = "PASS";
 
 WebServer server(80);
 
