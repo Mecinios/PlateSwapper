@@ -5,9 +5,10 @@
 #include <VL53L1X.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-
-const char* ssid = "ssid";
-const char* password = "pass";
+#include <WiFi.h>
+#include <ArduinoOTA.h>
+const char* ssid = "SSID";
+const char* password = "PASS";
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -24,18 +25,18 @@ WebServer server(80);
 #define STEP_PIN_PL 33
 #define DIR_PIN_PL  32
 
-#define EN_PIN_YL   14
-#define STEP_PIN_YL 27
-#define DIR_PIN_YL  26
+#define EN_PIN_XL   14
+#define STEP_PIN_XL 27
+#define DIR_PIN_XL  26
 
-#define EN_PIN_XL   15
-#define STEP_PIN_XL 13
-#define DIR_PIN_XL  12
+#define EN_PIN_YL   15
+#define STEP_PIN_YL 13
+#define DIR_PIN_YL  12
 
 // Endstop pins
 #define ENDSTOP_PL 18
-#define ENDSTOP_YL 19
-#define ENDSTOP_XL 5
+#define ENDSTOP_YL 5
+#define ENDSTOP_XL 19
 
 AccelStepper stepperPL(AccelStepper::DRIVER, STEP_PIN_PL, DIR_PIN_PL);
 AccelStepper stepperYL(AccelStepper::DRIVER, STEP_PIN_YL, DIR_PIN_YL);
@@ -67,7 +68,7 @@ void setup() {
 
   pinMode(EN_PIN_PL, OUTPUT); pinMode(EN_PIN_YL, OUTPUT); pinMode(EN_PIN_XL, OUTPUT);
   digitalWrite(EN_PIN_PL, LOW); digitalWrite(EN_PIN_YL, LOW); digitalWrite(EN_PIN_XL, LOW);
-
+ArduinoOTA.begin();
   pinMode(ENDSTOP_PL, INPUT_PULLUP);
   pinMode(ENDSTOP_YL, INPUT_PULLUP);
   pinMode(ENDSTOP_XL, INPUT_PULLUP);
@@ -99,6 +100,7 @@ void setup() {
 }
 
 void loop() {
+    ArduinoOTA.handle();
   currentDistance = sensor.read();
   server.handleClient();
   stepperPL.run();
@@ -145,28 +147,28 @@ void homeMotor(AccelStepper &stepper, int pin) {
 void handleHome() {
   showOnOLED("Homing...");
   homeMotor(stepperPL, ENDSTOP_PL);
-  homeMotor(stepperYL, ENDSTOP_YL);
   homeMotor(stepperXL, ENDSTOP_XL);
+  homeMotor(stepperYL, ENDSTOP_YL);
   plateNumber = 0;
   server.send(200, "text/plain", "Homing Done");
 }
 
 void handleLoadPlate() {
   showOnOLED("Load Plate");
-  stepperYL.moveTo(310); stepperXL.moveTo(150);
+  stepperYL.moveTo(120); stepperXL.moveTo(500); //pozycja 0
   while (stepperYL.distanceToGo() || stepperXL.distanceToGo()) { stepperYL.run(); stepperXL.run(); }
-  stepperPL.moveTo(2600 + plateNumber * 260);
+  stepperPL.moveTo(2500 + plateNumber * 260); //2500 z 2600 zmienione
   while (stepperPL.distanceToGo()) stepperPL.run();
-  stepperXL.moveTo(6000);
+  stepperYL.moveTo(6000);
+  while (stepperYL.distanceToGo()) stepperYL.run();
+  stepperXL.moveTo(700);
   while (stepperXL.distanceToGo()) stepperXL.run();
-  stepperYL.moveTo(700);
-  while (stepperYL.distanceToGo()) stepperYL.run();
-stepperYL.setMaxSpeed(100000);
-  stepperYL.setAcceleration(20000);
-   stepperYL.moveTo(500);
-  while (stepperYL.distanceToGo()) stepperYL.run();
-  stepperYL.setMaxSpeed(motorSpeed);
-  stepperYL.setAcceleration(motorAccel);
+stepperXL.setMaxSpeed(100000);
+  stepperXL.setAcceleration(20000);
+   stepperXL.moveTo(430);
+  while (stepperXL.distanceToGo()) stepperXL.run();
+  stepperXL.setMaxSpeed(motorSpeed);
+  stepperXL.setAcceleration(motorAccel);
   stepperPL.moveTo(0);
   while (stepperPL.distanceToGo()) stepperPL.run();
   plateNumber++;
@@ -175,12 +177,12 @@ stepperYL.setMaxSpeed(100000);
 
 void handleRemovePlate() {
   showOnOLED("Remove Plate");
-  stepperPL.moveTo(0); stepperXL.moveTo(8000);
-  while (stepperPL.distanceToGo() || stepperXL.distanceToGo()) { stepperPL.run(); stepperXL.run(); }
-  stepperYL.moveTo(10);
-  while (stepperYL.distanceToGo()) stepperYL.run();
-  stepperYL.moveTo(700);
-  while (stepperYL.distanceToGo()) stepperYL.run();
+  stepperPL.moveTo(0); stepperYL.moveTo(8000);
+  while (stepperPL.distanceToGo() || stepperYL.distanceToGo()) { stepperPL.run(); stepperYL.run(); }
+  stepperXL.moveTo(20);
+  while (stepperXL.distanceToGo()) stepperXL.run();
+  stepperXL.moveTo(700);
+  while (stepperXL.distanceToGo()) stepperXL.run();
   server.send(200, "text/plain", "Plate Removed");
 }
 
@@ -207,115 +209,144 @@ void handleDistance() {
 }
 
 // === NEW FUNCTION ===
+#include <AccelStepper.h>
+#include <math.h>
+
+#define PI 3.14159265
+
 void handleOpenChamber() {
   showOnOLED("Opening Chamber");
 
-  // 1. Move X to 3500
-  stepperXL.moveTo(3500);
-  while (stepperXL.distanceToGo()) stepperXL.run();
+  // === 1. Move to initial safe position ===
+  stepperYL.moveTo(3600);     // Y = more right
+  stepperXL.moveTo(14300);    // X = forward
+  while (stepperYL.distanceToGo() || stepperXL.distanceToGo()) {
+    stepperYL.run();
+    stepperXL.run();
+  }
 
-  // 2. Move Y to 8000
-  stepperYL.moveTo(8000);
+  // === 2. Move Y (left) to 4000 ===
+  stepperYL.moveTo(4000);
   while (stepperYL.distanceToGo()) stepperYL.run();
 
-  // 3. Move X to 3600
-  stepperXL.moveTo(3600);
-  while (stepperXL.distanceToGo()) stepperXL.run();
+  // === 3. ARC MOVE to back-left (2000, 10700) ===
+  const float centerX = 14300;
+  const float centerY = 10700;
+  const float radiusX = 12300;  // from 14300 to 2000
+  const float radiusY = 6700;   // from 10700 to 4000
 
-  // 4. Move Y to 7500
-  stepperYL.moveTo(7500);
-  while (stepperYL.distanceToGo()) stepperYL.run();
+  const float startAngle = -PI / 2.0;  // -90 deg
+  const float endAngle = -PI;          // -180 deg
+  const int segments = 60;             // smoothness
+  const float angleStep = (endAngle - startAngle) / segments;
 
-  // 5. Ćwiartka koła: do X = 10300, Y = 1100
-  int centerX = 10300;
-  int centerY = 7500;
-  int radius = abs(centerY - 1100); // czyli 6400
-stepperYL.setMaxSpeed(6000);
-  stepperYL.setAcceleration(5000);
-  stepperXL.setMaxSpeed(6000);
-  stepperXL.setAcceleration(5000);
-  for (int angle = 0; angle <= 90; angle++) {
-    float rad = angle * PI / 180.0;
-    int x = centerX - int(radius * cos(rad)); // zakrzywienie w lewo
-    int y = centerY - int(radius * sin(rad)); // zakrzywienie w górę
-    stepperXL.moveTo(x);
-    stepperYL.moveTo(y);
+  for (int i = 1; i <= segments; i++) {
+    float theta = startAngle + i * angleStep;
+    long targetX = centerX + radiusX * cos(theta); // XL = front/back
+    long targetY = centerY + radiusY * sin(theta); // YL = left/right
+
+    stepperXL.moveTo(targetX);
+    stepperYL.moveTo(targetY);
     while (stepperXL.distanceToGo() || stepperYL.distanceToGo()) {
       stepperXL.run();
       stepperYL.run();
     }
   }
-stepperYL.setMaxSpeed(motorSpeed);
-  stepperYL.setAcceleration(motorAccel);
-  stepperXL.setMaxSpeed(motorSpeed);
-  stepperXL.setAcceleration(motorAccel);
+
   server.send(200, "text/plain", "Chamber Opened");
 }
 
 
-
 void handleCloseChamber() {
   showOnOLED("Closing Chamber");
-
-  // 1. Move Y to 500
-  stepperYL.moveTo(500);
-  while (stepperYL.distanceToGo()) stepperYL.run();
-
-  // 2. Move X to 10400
-  stepperXL.moveTo(10400);
+ // 1. Move X to 300
+  stepperXL.moveTo(300);
   while (stepperXL.distanceToGo()) stepperXL.run();
 
-  // 3. Move Y to 1100
-  stepperYL.moveTo(1100);
+  // 2. Move Y to 10900
+  stepperYL.moveTo(10900);
   while (stepperYL.distanceToGo()) stepperYL.run();
 
-  // 4. Ćwiartka koła: do X=3700, Y=7800
-  int centerX = 10400;
-  int centerY = 7800;
-  int radius = abs(centerY - 1100); // 6700
+  // 3. Move X to 1800
+  stepperXL.moveTo(1800);
+  while (stepperXL.distanceToGo()) stepperXL.run();
 
-  stepperYL.setMaxSpeed(6000);
-  stepperYL.setAcceleration(5000);
-  stepperXL.setMaxSpeed(6000);
-  stepperXL.setAcceleration(5000);
+  const float centerX = 15000;
+  const float centerY = 10500;
+  const float radiusX = 13000.0;   // 15000 - 2000 (previous open start)
+  const float radiusY = 6550.0;    // 10500 - 3950
 
-  for (int angle = 0; angle <= 90; angle++) {
-    float rad = angle * PI / 180.0;
-    int x = centerX - int(radius * sin(rad)); // z prawej do lewej
-    int y = centerY - int(radius * cos(rad)); // z góry w dół
-    stepperXL.moveTo(x);
-    stepperYL.moveTo(y);
+  // Angle from left to actual destination
+  const float startAngle = -PI;                       // -180°
+  const float endAngle = atan2(3950 - 10500, 14300 - 15000);  // to (14300, 3950)
+
+  const int segments = 60;
+  const float angleStep = (endAngle - startAngle) / segments;
+
+  for (int i = 1; i <= segments; i++) {
+    float theta = startAngle + i * angleStep;
+
+    long targetX = round(centerX + radiusX * cos(theta));
+    long targetY = round(centerY + radiusY * sin(theta));
+
+    // Guarantee final point
+    if (i == segments) {
+      targetX = 14300;
+      targetY = 3950;
+    }
+
+    stepperXL.moveTo(targetX);
+    stepperYL.moveTo(targetY);
     while (stepperXL.distanceToGo() || stepperYL.distanceToGo()) {
       stepperXL.run();
       stepperYL.run();
     }
   }
 
-  // 5. Y to 600
-  stepperYL.setMaxSpeed(motorSpeed);
-  stepperYL.setAcceleration(motorAccel);
-  stepperXL.setMaxSpeed(motorSpeed);
-  stepperXL.setAcceleration(motorAccel);
- stepperYL.moveTo(7980);
-  while (stepperYL.distanceToGo()) stepperYL.run();
-  stepperYL.moveTo(600);
-  while (stepperYL.distanceToGo()) stepperYL.run();
-
+  // Hard guarantee end point
+  stepperXL.moveTo(14300);
+  stepperYL.moveTo(3950);
+  while (stepperXL.distanceToGo() || stepperYL.distanceToGo()) {
+    stepperXL.run();
+    stepperYL.run();
+  }
+ stepperXL.moveTo(300);
+  while (stepperXL.distanceToGo()) stepperXL.run();
   server.send(200, "text/plain", "Chamber Closed");
 }
 
 
-
 void handleLoadToPrinter() {
   showOnOLED("Load to Printer");
-  server.send(200, "text/plain", "Not implemented");
+   stepperYL.moveTo(10400);
+  while (stepperYL.distanceToGo()) stepperYL.run();
+  stepperXL.moveTo(16450);
+  while (stepperXL.distanceToGo()) stepperXL.run();
+ stepperXL.moveTo(16100);
+stepperYL.moveTo(10430);
+  while (stepperXL.distanceToGo() || stepperYL.distanceToGo()) {
+    stepperXL.run();
+    stepperYL.run();
+  }
+  delay(20000);
+    stepperXL.moveTo(400);
+  while (stepperXL.distanceToGo()) stepperXL.run();
 }
 
 void handleUnloadFromPrinter() {
   showOnOLED("Unload from Printer");
-  server.send(200, "text/plain", "Not implemented");
-}
+  stepperYL.moveTo(10200);
+  while (stepperYL.distanceToGo()) stepperYL.run();
 
+  stepperXL.moveTo(16150);
+  while (stepperXL.distanceToGo()) stepperXL.run();
+   stepperYL.moveTo(10400);
+  while (stepperYL.distanceToGo()) stepperYL.run();
+
+  delay(20000);
+  stepperXL.moveTo(500);
+  while (stepperXL.distanceToGo()) stepperXL.run();
+}
 void handleRoot() {
   String page = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>";
   page += "<title>Control</title></head><body>";
